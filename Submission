@@ -1,0 +1,171 @@
+#Dependencies
+
+import tensorflow as tf
+import keras_preprocessing
+import numpy as np
+import matplotlib.image as mpimg
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+from tensorflow.keras.optimizers import RMSprop
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.callbacks import EarlyStopping
+from keras import optimizers
+from keras import layers
+from keras import losses
+from keras import models
+from keras_preprocessing import image
+from google.colab import files
+print(tf.__version__)
+
+!wget --no-check-certificate \
+    https://github.com/dicodingacademy/assets/releases/download/release/rockpaperscissors.zip \
+    -O /tmp/rockpaperscissors.zip
+    
+    
+# File Extraction
+
+import zipfile,os
+
+local_zip = '/tmp/rockpaperscissors.zip'
+zip_ref = zipfile.ZipFile(local_zip, 'r')
+zip_ref.extractall('/tmp')
+zip_ref.close()
+
+rock_dir = os.path.join('/tmp/rockpaperscissors/rock')
+rock_files = os.listdir(rock_dir)
+paper_dir = os.path.join('/tmp/rockpaperscissors/paper')
+paper_files = os.listdir(paper_dir)
+scissors_dir = os.path.join('/tmp/rockpaperscissors/scissors')
+scissors_files = os.listdir(scissors_dir)
+
+print('rock images:', len(os.listdir(rock_dir)))
+print('paper images:', len(os.listdir(paper_dir)))
+print('scissors images:', len(os.listdir(scissors_dir)))
+
+
+#Dataset Preparation
+
+data_dir = '/tmp/rockpaperscissors/rps-cv-images/'
+augs_gen = ImageDataGenerator(
+    rescale = 1./255,        
+    horizontal_flip = True,
+    shear_range = 0.2,
+    fill_mode='nearest',
+    validation_split = 0.4,
+)  
+
+test_gen = ImageDataGenerator(
+    horizontal_flip = False
+)
+
+train_generator = augs_gen.flow_from_directory(
+    data_dir,
+    target_size = (150,150),
+    batch_size = 32,
+    class_mode = 'categorical',
+    shuffle = True,
+    subset = 'training'
+)
+
+validation_generator = test_gen.flow_from_directory(
+    data_dir,
+    target_size = (150,150),
+    batch_size = 32,
+    class_mode = 'categorical',
+    shuffle = False,
+    subset = 'validation'
+
+)
+
+
+#Convolutional Neural Network Model
+
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Conv2D(32, (3,3), activation = 'relu', input_shape = (150, 150, 3)),
+    tf.keras.layers.MaxPooling2D(2, 2),
+
+    tf.keras.layers.Conv2D(64, (3,3), activation = 'relu'),
+    tf.keras.layers.MaxPooling2D(2,2),
+
+    tf.keras.layers.Conv2D(128, (3,3), activation = 'relu'),
+    tf.keras.layers.MaxPooling2D(2,2),
+
+    tf.keras.layers.Conv2D(128, (3,3), activation='relu'),
+    tf.keras.layers.MaxPooling2D(2,2), 
+
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(256, activation = 'relu'),
+    tf.keras.layers.Dense(512, activation = 'relu'),
+    tf.keras.layers.Dense(3, activation = 'softmax')
+])
+
+model.summary()
+
+
+#Callback Class
+class myCallback(tf.keras.callbacks.Callback):
+  def on_epoch_end(self, epoch, logs={}):
+    if(logs.get('accuracy') > 0.97 and logs.get('val_accuracy') > 0.98):
+      print("\nModel finished, training stopped early")
+      self.model.stop_training = True
+
+es = myCallback()
+
+#Model Compilation
+model.compile(loss = 'categorical_crossentropy', optimizer = 'adam', metrics = ['accuracy'])
+history = model.fit(train_generator,
+                    steps_per_epoch = 41,
+                    epochs = 18,
+                    validation_data = validation_generator,
+                    validation_steps = 27,
+                    callbacks = [es])
+model.save("rps.h5")
+model.metrics_names
+
+
+
+#Graph Visualization
+
+acc = history.history['accuracy']
+val_acc = history.history['val_accuracy']
+loss = history.history['loss']
+val_loss = history.history['val_loss']
+
+epochs = range(len(acc))
+
+plt.plot(epochs, acc, 'r', label='Training accuracy')
+plt.plot(epochs, val_acc, 'b', label='Validation accuracy')
+plt.title('Training and validation accuracy')
+plt.legend(loc=0)
+plt.figure()
+
+plt.plot(epochs, loss, 'r', label='Training loss')
+plt.plot(epochs, val_loss, 'b', label='Validation loss')
+plt.title('Training and validation loss')
+plt.legend(loc=0)
+plt.figure()
+
+plt.show()
+
+
+%matplotlib inline
+uploaded = files.upload()
+
+for fn in uploaded.keys():
+
+  path = fn 
+  img = image.load_img(path, target_size =(150,150))
+  imgplot = plt.imshow(img)
+  x = image.img_to_array(img)
+  x = np.expand_dims(x, axis=0)
+
+  images = np.vstack([x])
+  classes = model.predict(images, batch_size=10)
+
+  print(fn)
+  if classes[0,0]!=0:
+    print('paper')
+  elif classes[0,1]!=0:
+    print('rock')
+  else:
+    print('scissors')
